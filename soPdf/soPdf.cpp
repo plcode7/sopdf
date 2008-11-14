@@ -27,8 +27,8 @@ soPdfFile   outPdfFile;
 bool
 ParseCommandLine()
 {
-    initSoPdfFile(&inPdfFile, "d:\\temp\\infile.pdf");
-    initSoPdfFile(&outPdfFile, "d:\\temp\\outfile.pdf");
+    initSoPdfFile(&inPdfFile, "d:\\temp\\forexsur.pdf");
+    initSoPdfFile(&outPdfFile, "d:\\temp\\forexsurout.pdf");
 
     p_szTitle = "test";
     p_szAuthor = "Unknown";
@@ -59,7 +59,7 @@ soPdfError(
         soPdfError(error->cause);
     }
 
-    fz_droperror(error);
+    //fz_droperror(error);
     return 1;
 }
 

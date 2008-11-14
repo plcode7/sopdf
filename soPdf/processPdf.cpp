@@ -181,9 +181,9 @@ bbdump(fz_node *node, int level)
     }
 
     indent(level);
-    printf("<%s : bbox = %.2f %.2f %.2f %.2f>\n", 
-        kind, node->bbox.x0, node->bbox.x1, 
-        node->bbox.y0, node->bbox.y1);
+    printf("<%s : bbox = %.2f,%.2f - %.2f,%.2f>\n", 
+        kind, node->bbox.x0, node->bbox.y0, 
+        node->bbox.x1, node->bbox.y1);
 
     for (child = node->first; child; child = child->next)
 		bbdump(child, level + 1);
@@ -300,6 +300,116 @@ getContainingRect(
     return rect;
 }
 
+#define SPLIT_POINTS 1000
+struct splitPoints
+{
+    float y0[SPLIT_POINTS];
+    float y1[SPLIT_POINTS];
+    int count;
+};
+
+int splitCmp(const void* e1, const void* e2)
+{
+    return (*(float*)e1 < *(float*)e2) ? -1 : ((*(float*)e1 > *(float*)e2) ? 1 : 0);
+}
+
+fz_error* insertYCoord(splitPoints *sp, float y0, float y1)
+{
+    int ctr;
+
+    if (sp->count >= SPLIT_POINTS)
+    {
+        return fz_throw("not enough memory");
+    }
+
+    if (sp->count > 0)
+    {
+        float *fp = (float*)bsearch(&y0, sp->y0, sp->count, sizeof(float), splitCmp);
+        if (fp != NULL)
+        {
+            int offset = (fp - sp->y0) / sizeof(float);
+            if (sp->y1[offset] < y1) sp->y1[offset] = y1;
+            return NULL;
+        }
+    }
+
+    // Insert sorted
+    for (ctr = sp->count; ctr > 0; ctr--)
+    {
+        if (sp->y0[ctr - 1] > y0) 
+        {
+            sp->y0[ctr] = sp->y0[ctr - 1];
+            sp->y1[ctr] = sp->y1[ctr - 1];
+        }
+        else
+            break;
+    }
+
+    sp->y0[ctr] = y0;
+    sp->y1[ctr] = y1;
+    sp->count++;
+
+    return NULL;
+} 
+
+
+void
+getSplitPoints(
+    fz_node *node,
+    splitPoints *sp
+    )
+{
+    if (node)
+    {
+        switch(node->kind)
+        {
+        case FZ_NTEXT:
+        case FZ_NIMAGE:
+        case FZ_NPATH:
+            insertYCoord(sp, node->bbox.y0, node->bbox.y1);
+            break;
+
+        default:
+            break;
+        }
+
+        // Recurse
+        for (fz_node *child = node->first; child; child = child->next)
+            getSplitPoints(child, sp);
+    }
+}
+
+void
+processSplitPoints(
+    splitPoints *sp
+    )
+{
+    splitPoints lsp;
+    int prevCount;
+
+    do {
+
+        lsp.count = 1;
+        lsp.y0[0] = sp->y0[0];
+        lsp.y1[0] = sp->y1[0];
+
+        for (int ctr = 1; ctr < sp->count; ctr++)
+        {
+            if (lsp.y1[lsp.count - 1] < sp->y0[ctr])
+                insertYCoord(&lsp, sp->y0[ctr], sp->y1[ctr]);
+            else
+            {
+                if (sp->y0[ctr] < lsp.y0[lsp.count - 1])    lsp.y0[lsp.count - 1] = sp->y0[ctr];
+                if (sp->y1[ctr] > lsp.y1[lsp.count - 1])    lsp.y1[lsp.count - 1] = sp->y1[ctr];
+            }
+        }
+
+        // copy to dest
+        prevCount = sp->count;
+        *sp = lsp;
+
+    } while (prevCount > lsp.count);
+}
 
 fz_error*
 processPage(
@@ -314,9 +424,10 @@ processPage(
     pdf_page    *pdfPage;
     fz_rect     contentBox;
     fz_rect     mediaBox;
-    //int         width, height;
+    splitPoints sp;
 
-    // Initialize the out rect
+    // Initialize 
+    sp.count = 0;
     for (int ctr = 0; ctr < rectCount; ctr++)
         bbRect[ctr] = fz_emptyrect;
 
@@ -335,13 +446,43 @@ processPage(
     // calculate the bounding box for all the elements in the page
     contentBox = fz_boundnode(pdfPage->tree->root, fz_identity());
 
-    ////bbdump(pdfPage->tree->root, 1);
-    float height = contentBox.y1 - contentBox.y0;
+    // If there is nothing on the page we return nothing.
+    // should we return and empty page instead ???
+    if (fz_isemptyrect(contentBox))
+    {
+        pdf_droppage(pdfPage);
+        return error;
+    }
+
+
+    printf("-->Page %d\n", pageNo);
+#ifdef _blahblah
+    bbdump(pdfPage->tree->root, 1);
+#endif
+
+    //// Get all the points where the page can be split
+    //getSplitPoints(pdfPage->tree->root, &sp);
+    //processSplitPoints(&sp);
+
+    // Get the first split
+    float contentHeight = contentBox.y1 - contentBox.y0;
     bbRect[0] = contentBox;
-    bbRect[0].y1 = bbRect[0].y0 + height / 2;
+    bbRect[0].y0 = bbRect[0].y0 + contentHeight / 2;
     bbRect[0] = getContainingRect(pdfPage->tree->root, bbRect[0]);
 
-    //bbRect[0] = contentBox;
+    if (fz_isemptyrect(bbRect[0]))
+    {
+        bbRect[0] = contentBox;
+        bbRect[0].y0 = bbRect[0].y0 + contentHeight / 2;
+    }
+
+    // Check if we need second split
+    float firstSplitHeight = bbRect[0].y1 - bbRect[0].y0;
+    if (firstSplitHeight / contentHeight * 100 < 40)
+    {
+
+    }
+//    bbRect[0] = contentBox;
 
     // done with the page
     pdf_droppage(pdfPage);
@@ -398,41 +539,41 @@ copyPdfFile(
             if (error)
                 return soPdfError(error);
 
-            //
-            // copy the source page dictionary entry. The way this is done is basically
-            // by making a copy of the page dict object in the source file, and adding
-            // the copy in the source file. Then the copied page dict object is 
-            // referenced and added to the destination file.
-            //
-            // This convoluted procedure is done because the copy is done by pdf_transplant
-            // function that accepts a source and destination. What ever is referenced by
-            // destination object is deep copied
-            //
+            ////
+            //// copy the source page dictionary entry. The way this is done is basically
+            //// by making a copy of the page dict object in the source file, and adding
+            //// the copy in the source file. Then the copied page dict object is 
+            //// referenced and added to the destination file.
+            ////
+            //// This convoluted procedure is done because the copy is done by pdf_transplant
+            //// function that accepts a source and destination. What ever is referenced by
+            //// destination object is deep copied
+            ////
 
-            // allocate an object id and generation id in source file
-            error = pdf_allocobject(inFile->xref, &sNum, &sGen);
-            if (error)
-                return soPdfError(error);
+            //// allocate an object id and generation id in source file
+            //error = pdf_allocobject(inFile->xref, &sNum, &sGen);
+            //if (error)
+            //    return soPdfError(error);
 
-            // make a copy of the original page dict
-            error = fz_copydict(&pageObj2, pageObj);
-            if (error)
-                return soPdfError(error);
+            //// make a copy of the original page dict
+            //error = fz_copydict(&pageObj2, pageObj);
+            //if (error)
+            //    return soPdfError(error);
 
-            // update the source file with the duplicate page object
-            pdf_updateobject(inFile->xref, sNum, sGen, pageObj2);
+            //// update the source file with the duplicate page object
+            //pdf_updateobject(inFile->xref, sNum, sGen, pageObj2);
 
-            fz_dropobj(pageObj2);
+            //fz_dropobj(pageObj2);
 
-            // create an indirect reference to the page object
-            error = fz_newindirect(&pageRef2, sNum, sGen);
-            if (error)
-                return soPdfError(error);
+            //// create an indirect reference to the page object
+            //error = fz_newindirect(&pageRef2, sNum, sGen);
+            //if (error)
+            //    return soPdfError(error);
 
-            // push the indirect reference to the destination list for copy by pdf_transplant
-            error = fz_arraypush(outFile->editobjs, pageRef2);
-            if (error)
-                return soPdfError(error);
+            //// push the indirect reference to the destination list for copy by pdf_transplant
+            //error = fz_arraypush(outFile->editobjs, pageRef2);
+            //if (error)
+            //    return soPdfError(error);
         }
     }
 
