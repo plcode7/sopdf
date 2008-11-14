@@ -27,8 +27,8 @@ soPdfFile   outPdfFile;
 bool
 ParseCommandLine()
 {
-    initSoPdfFile(&inPdfFile, "d:\\temp\\beat.pdf");
-    initSoPdfFile(&outPdfFile, "d:\\temp\\beatout.pdf");
+    initSoPdfFile(&inPdfFile, "d:\\temp\\infile.pdf");
+    initSoPdfFile(&outPdfFile, "d:\\temp\\outfile.pdf");
 
     p_szTitle = "test";
     p_szAuthor = "Unknown";

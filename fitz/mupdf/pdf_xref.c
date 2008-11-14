@@ -320,6 +320,11 @@ pdf_deleteobject(pdf_xref *xref, int oid, int gen)
 	return fz_okay;
 }
 
+/*++
+    This function updates the xref table with the object id number
+    and generation number and point the number to the object 
+    specified in the function.
+--*/
 fz_error *
 pdf_updateobject(pdf_xref *xref, int oid, int gen, fz_obj *obj)
 {
