@@ -1,28 +1,21 @@
 #pragma once
 
-enum EScale
+enum EMode
 {
-    FitToHeight,
-    FitToWidth,
-    FitTo2xHeight,
-    FitTo2xWidth,
-    FitTo3xWidth
+    Fit2xWidth,
+    Fit2xHeight,
+    FitWidth,
+    FitHeight,
+    SmartFitWidth,
+    SmartFitHeight
 };
 
 //
 // declarations for parameters
 //
-extern char*   p_szInFile;
-extern char*   p_szOutFile;
-extern char*   p_szTitle;
-extern char*   p_szAuthor;
-extern char*   p_szPublisher;
-extern char*   p_szCategory;
-extern char*   p_noPages;
-
-extern bool    p_cropSides;
-extern double  p_overlap;
-extern EScale  p_scale;
+extern bool     p_cropWhiteSpace;
+extern double   p_overlap;
+extern EMode    p_mode;
 
 
 int soPdfError(fz_error *error);

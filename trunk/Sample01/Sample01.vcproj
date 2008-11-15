@@ -42,7 +42,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="..\fitz\include"
-				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;&quot;__func__=\&quot;\&quot;&quot;"
+				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;__func__=__FUNCTION__"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"

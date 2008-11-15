@@ -43,7 +43,7 @@
 				AdditionalOptions="/wd 4244"
 				Optimization="0"
 				AdditionalIncludeDirectories="include;include\fitz;include\mupdf;..\jpeg6b;..\jasper\include;..\zlib;..\jbig2dec;cmaps;..\freetype\include"
-				PreprocessorDefinitions="WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_NO_DEPRECATE;NEED_STRLCPY;NEED_STRSEP;NEED_MATH;NEED_GETOPT;NEED_GETTIMEOFDAY;&quot;__func__=\&quot;\&quot;&quot;;isnan=_isnan;USE_STATIC_CMAPS;WIN32_UNICODE_HACK;FT2_BUILD_LIBRARY;FT_OPTION_AUTOFIT2;BUILD_RM_VERSION"
+				PreprocessorDefinitions="WIN32;_DEBUG;_LIB;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_NO_DEPRECATE;NEED_STRLCPY;NEED_STRSEP;NEED_MATH;NEED_GETOPT;NEED_GETTIMEOFDAY;__func__=__FUNCTION__;isnan=_isnan;USE_STATIC_CMAPS;WIN32_UNICODE_HACK;FT2_BUILD_LIBRARY;FT_OPTION_AUTOFIT2;BUILD_RM_VERSION"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
