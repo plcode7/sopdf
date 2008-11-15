@@ -3,11 +3,12 @@
 // soPdf file
 typedef struct _soPdfFile
 {
-    char*   fileName;
-    char*   title;
-    char*   author;
-    char*   category;
-    char*   password;
+    char    fileName[1024];
+    char    title[128];
+    char    author[128];
+    char    category[128];
+    char    password[128];
+    char    publisher[128];
 
     // pdf document state
     pdf_xref        *xref;
@@ -24,11 +25,7 @@ typedef struct _soPdfFile
 
 soPdfFile* 
 initSoPdfFile(
-    soPdfFile* pdfFile, 
-    char* pdfFileName,
-    char* pdfFileTitle = NULL,
-    char* pdfFileAuthor = NULL,
-    char* pdfFileCategory = NULL);
+    soPdfFile* pdfFile);
 
 int 
 processPdfFile(

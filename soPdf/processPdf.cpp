@@ -8,21 +8,10 @@
 
 soPdfFile*
 initSoPdfFile(
-    soPdfFile* pdfFile, 
-    char* pdfFileName,
-    char* pdfTitle,
-    char* pdfAuthor,
-    char* pdfCategory
+    soPdfFile* pdfFile 
     )
 {
     memset(pdfFile, 0, sizeof(soPdfFile));
-
-    pdfFile->fileName = pdfFileName;
-    pdfFile->title = pdfTitle;
-    pdfFile->author = pdfAuthor;
-    pdfFile->category = pdfCategory;
-    pdfFile->password = "";
-
     return pdfFile;
 }
 
@@ -223,10 +212,26 @@ setPageMediaBox(
 
     // We have the MediaBox array here
     mRect = fz_roundrect(mediaBox);
-    objInt = fz_arrayget(objMedia, 0); objInt->u.i = mRect.x0;
-    objInt = fz_arrayget(objMedia, 1); objInt->u.i = mRect.y0;
-    objInt = fz_arrayget(objMedia, 2); objInt->u.i = mRect.x1;
-    objInt = fz_arrayget(objMedia, 3); objInt->u.i = mRect.y1;
+
+    error = fz_newint(&objInt, mRect.x0);
+    if (error) return fz_rethrow(error, "cannot allocate int"); 
+    fz_arrayput(objMedia, 0, objInt);
+    fz_dropobj(objInt);
+
+    error = fz_newint(&objInt, mRect.y0);
+    if (error) return fz_rethrow(error, "cannot allocate int"); 
+    fz_arrayput(objMedia, 1, objInt);
+    fz_dropobj(objInt);
+
+    error = fz_newint(&objInt, mRect.x1);
+    if (error) return fz_rethrow(error, "cannot allocate int"); 
+    fz_arrayput(objMedia, 2, objInt);
+    fz_dropobj(objInt);
+
+    error = fz_newint(&objInt, mRect.y1);
+    if (error) return fz_rethrow(error, "cannot allocate int"); 
+    fz_arrayput(objMedia, 3, objInt);
+    fz_dropobj(objInt);
 
     return NULL;
 }
@@ -424,10 +429,8 @@ processPage(
     pdf_page    *pdfPage;
     fz_rect     contentBox;
     fz_rect     mediaBox;
-    splitPoints sp;
 
     // Initialize 
-    sp.count = 0;
     for (int ctr = 0; ctr < rectCount; ctr++)
         bbRect[ctr] = fz_emptyrect;
 
@@ -440,19 +443,17 @@ processPage(
 
     // Get the bounding box for the page
     mediaBox = pdfPage->mediabox;
-    //width = mediaBox.x1 - mediaBox.x0;
-    //height = mediaBox.y1 - mediaBox.y0;
-
+    float mbHeight = mediaBox.y1 - mediaBox.y0;
+    
     // calculate the bounding box for all the elements in the page
     contentBox = fz_boundnode(pdfPage->tree->root, fz_identity());
+    float cbHeight = contentBox.y1 - contentBox.y0;
+
 
     // If there is nothing on the page we return nothing.
-    // should we return and empty page instead ???
+    // should we return an empty page instead ???
     if (fz_isemptyrect(contentBox))
-    {
-        pdf_droppage(pdfPage);
-        return error;
-    }
+        goto Cleanup;
 
 
     printf("-->Page %d\n", pageNo);
@@ -464,26 +465,27 @@ processPage(
     //getSplitPoints(pdfPage->tree->root, &sp);
     //processSplitPoints(&sp);
 
-    // Get the first split
-    float contentHeight = contentBox.y1 - contentBox.y0;
-    bbRect[0] = contentBox;
-    bbRect[0].y0 = bbRect[0].y0 + contentHeight / 2;
-    bbRect[0] = getContainingRect(pdfPage->tree->root, bbRect[0]);
-
-    if (fz_isemptyrect(bbRect[0]))
+    // If the contentBox is 60% of mediaBox then do not split 
+    if (((cbHeight / mbHeight) * 100) <= 60)
     {
         bbRect[0] = contentBox;
-        bbRect[0].y0 = bbRect[0].y0 + contentHeight / 2;
+        goto Cleanup;
     }
 
-    // Check if we need second split
-    float firstSplitHeight = bbRect[0].y1 - bbRect[0].y0;
-    if (firstSplitHeight / contentHeight * 100 < 40)
-    {
 
-    }
-//    bbRect[0] = contentBox;
+    // Get the first split contents from top
+    float contentHeight = contentBox.y1 - contentBox.y0;
+    bbRect[0] = contentBox;
+    bbRect[0].y0 = bbRect[0].y0 + (contentHeight / 2);
+    bbRect[0] = getContainingRect(pdfPage->tree->root, bbRect[0]);
 
+    // Get the second split contents from bottom
+    bbRect[1] = contentBox;
+    bbRect[1].y1 = bbRect[1].y1 - (contentHeight / 2);
+    bbRect[1] = getContainingRect(pdfPage->tree->root, bbRect[1]);
+
+
+Cleanup:
     // done with the page
     pdf_droppage(pdfPage);
 
@@ -509,8 +511,6 @@ copyPdfFile(
         for (int pageNo = 0; pageNo < pdf_getpagecount(inFile->pageTree); pageNo++)
         {
             // Get the page object from the source
-            int     sNum, sGen;
-            fz_obj  *pageObj2, *pageRef2;
             fz_obj  *pageRef = inFile->pageTree->pref[pageNo];
             fz_obj  *pageObj = pdf_getpageobject(inFile->pageTree, pageNo);
 
@@ -522,58 +522,68 @@ copyPdfFile(
             if (error)
                 return soPdfError(error);
 
-            //
-            // Set the media box
-            //
-            setPageMediaBox(inFile->xref, pageObj, bbRect[0]);
 
-            // delete the parent dictionary entry
-            // Do we need to delete any other dictionary entry 
-            // like annot, tabs, metadata, etc
-            fz_dictdels(pageObj, "Parent");
+            //pdf_updateobject(inFile->xref, fz_tonum(pageRef), fz_togen(pageRef), pageObj);
 
-            pdf_updateobject(inFile->xref, fz_tonum(pageRef), fz_togen(pageRef), pageObj);
-
-            // push it into destination
-            error = fz_arraypush(outFile->editobjs, pageRef);
-            if (error)
-                return soPdfError(error);
-
-            ////
-            //// copy the source page dictionary entry. The way this is done is basically
-            //// by making a copy of the page dict object in the source file, and adding
-            //// the copy in the source file. Then the copied page dict object is 
-            //// referenced and added to the destination file.
-            ////
-            //// This convoluted procedure is done because the copy is done by pdf_transplant
-            //// function that accepts a source and destination. What ever is referenced by
-            //// destination object is deep copied
-            ////
-
-            //// allocate an object id and generation id in source file
-            //error = pdf_allocobject(inFile->xref, &sNum, &sGen);
+            //// push it into destination
+            //error = fz_arraypush(outFile->editobjs, pageRef);
             //if (error)
             //    return soPdfError(error);
 
-            //// make a copy of the original page dict
-            //error = fz_copydict(&pageObj2, pageObj);
-            //if (error)
-            //    return soPdfError(error);
+            for (int ctr = 0; ctr < 3; ctr++)
+            {
+                // Check if this was a blank page
+                if (fz_isemptyrect(bbRect[ctr]))
+                    break;
 
-            //// update the source file with the duplicate page object
-            //pdf_updateobject(inFile->xref, sNum, sGen, pageObj2);
+                //
+                // copy the source page dictionary entry. The way this is done is basically
+                // by making a copy of the page dict object in the source file, and adding
+                // the copy in the source file. Then the copied page dict object is 
+                // referenced and added to the destination file.
+                //
+                // This convoluted procedure is done because the copy is done by pdf_transplant
+                // function that accepts a source and destination. Whatever is referenced by
+                // destination object is deep copied
+                //
+                
 
-            //fz_dropobj(pageObj2);
+                // allocate an object id and generation id in source file
+                int sNum, sGen;
+                error = pdf_allocobject(inFile->xref, &sNum, &sGen);
+                if (error)
+                    return soPdfError(error);
 
-            //// create an indirect reference to the page object
-            //error = fz_newindirect(&pageRef2, sNum, sGen);
-            //if (error)
-            //    return soPdfError(error);
+                // make a copy of the original page dict
+                fz_obj  *pageObj2;
+                error = fz_deepcopydict(&pageObj2, pageObj);
+                if (error)
+                    return soPdfError(error);
 
-            //// push the indirect reference to the destination list for copy by pdf_transplant
-            //error = fz_arraypush(outFile->editobjs, pageRef2);
-            //if (error)
-            //    return soPdfError(error);
+                // update the source file with the duplicate page object
+                pdf_updateobject(inFile->xref, sNum, sGen, pageObj2);
+
+                fz_dropobj(pageObj2);
+
+                // create an indirect reference to the page object
+                fz_obj  *pageRef2;
+                error = fz_newindirect(&pageRef2, sNum, sGen);
+                if (error)
+                    return soPdfError(error);
+
+                // delete the parent dictionary entry
+                // Do we need to delete any other dictionary entry 
+                // like annot, tabs, metadata, etc
+                fz_dictdels(pageObj2, "Parent");
+
+                // Set the media box
+                setPageMediaBox(inFile->xref, pageObj2, bbRect[ctr]);
+
+                // push the indirect reference to the destination list for copy by pdf_transplant
+                error = fz_arraypush(outFile->editobjs, pageRef2);
+                if (error)
+                    return soPdfError(error);
+            }
         }
     }
 
