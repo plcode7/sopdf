@@ -17,5 +17,6 @@ extern bool     p_cropWhiteSpace;
 extern double   p_overlap;
 extern EMode    p_mode;
 
+#define SO_PDF_VER  "0.1 alpha"
 
 int soPdfError(fz_error *error);
