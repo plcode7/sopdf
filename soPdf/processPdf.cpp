@@ -2,9 +2,36 @@
 #include "soPdf.h"
 #include "processPdf.h"
 
-//
-// Pdf variables
-//
+
+
+void
+displayPageNumber(
+    int pageNo,
+    bool first
+    )
+{
+    static HANDLE  hStdOut = INVALID_HANDLE_VALUE;
+    static CONSOLE_SCREEN_BUFFER_INFO csbiInfo; 
+    static COORD pos;
+
+    // Get the handle
+    if (hStdOut == INVALID_HANDLE_VALUE)
+        hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hStdOut == INVALID_HANDLE_VALUE) return;
+
+    // Get the screen info
+    if (first)
+    {
+        if (! GetConsoleScreenBufferInfo(hStdOut, &csbiInfo)) 
+            return;
+        pos = csbiInfo.dwCursorPosition;
+    }
+    else
+    {
+        SetConsoleCursorPosition(hStdOut, pos);
+        printf("%d", pageNo);
+    }
+}
 
 soPdfFile*
 initSoPdfFile(
@@ -178,6 +205,42 @@ bbdump(fz_node *node, int level)
 		bbdump(child, level + 1);
 }
 
+#define PUT_INFO(_N, _F)    if (_F[0] != 0) { \
+                                error = fz_newstring(&outObj, _F, strlen(_F)); \
+                                if (error) return fz_rethrow(error, "unable to allocate"); \
+                                error = fz_dictputs(outFile->xref->info, _N, outObj); \
+                                if (error) return fz_rethrow(error, "unable to put : %s", _N); \
+                                fz_dropobj(outObj); }
+                                            
+fz_error*
+setPageInfo(
+    soPdfFile*  inFile,
+    soPdfFile*  outFile)
+{
+    fz_error    *error = NULL;
+    fz_obj      *outObj;
+    char        creator[] = "soPdf ver " SO_PDF_VER;
+    char        szTime[128] = "";
+	struct tm   tmTemp;
+    __time32_t  time;
+
+    _time32(&time);
+    _localtime32_s(&tmTemp, &time);
+    strftime(szTime, sizeof(szTime), "%Y/%m/%d %H:%M", &tmTemp);
+
+    PUT_INFO("Title", outFile->title);
+    PUT_INFO("Author", outFile->author);
+    PUT_INFO("Category", outFile->category);
+    PUT_INFO("Publisher", outFile->publisher);
+    PUT_INFO("Subject", outFile->subject);
+    PUT_INFO("Creator", creator);
+    PUT_INFO("Producer", creator);
+    PUT_INFO("CreationDate", szTime);
+    PUT_INFO("ModDate", szTime);
+
+    return error;
+}
+
 fz_error*
 setPageMediaBox(
     pdf_xref*   pdfXRef,
@@ -193,22 +256,22 @@ setPageMediaBox(
     // Delete the CropBox. This is done because we are reducing
     // the size of the media box and CropBox is of no use to us
     fz_dictdels(pageObj, "CropBox");
+    //objMedia = fz_dictgets(pageObj, "CropBox");
+    //if (objMedia == NULL) return fz_throw("no CropBox entry");
+    //error = pdf_resolve(&objMedia, pdfXRef);
+    //if (error) return fz_rethrow(error, "cannot resolve page bounds");
+    //if (! fz_isarray(objMedia)) return fz_throw("cannot find page bounds");
+    //fz_rect cRect = pdf_torect(objMedia);
 
     // Get the media box
     objMedia = fz_dictgets(pageObj, "MediaBox");
-    if (objMedia == NULL)
-    {
-        // This entry does not have media box. Create a new
-        // media box entry later
-        return fz_throw("no MediaBox entry");
-    }
+    if (objMedia == NULL) return fz_throw("no MediaBox entry");
 
     error = pdf_resolve(&objMedia, pdfXRef);
-    if (error)
-        return fz_rethrow(error, "cannot resolve page bounds");
+    if (error) return fz_rethrow(error, "cannot resolve page bounds");
 
-    if (! fz_isarray(objMedia))
-        return fz_throw("cannot find page bounds");
+    if (! fz_isarray(objMedia)) return fz_throw("cannot find page bounds");
+
 
     // We have the MediaBox array here
     mRect = fz_roundrect(mediaBox);
@@ -449,40 +512,88 @@ processPage(
     contentBox = fz_boundnode(pdfPage->tree->root, fz_identity());
     float cbHeight = contentBox.y1 - contentBox.y0;
 
-
     // If there is nothing on the page we return nothing.
     // should we return an empty page instead ???
     if (fz_isemptyrect(contentBox))
         goto Cleanup;
 
+    // if contentBox is bigger than mediaBox then there are some
+    // elements that should not be display and hence we reset the
+    // content box to media box
+    if ((cbHeight > mbHeight) || ((contentBox.x1 - contentBox.x0) > (mediaBox.x1 - mediaBox.x0)))
+    {
+        // Calculate the new content box based on the content that is 
+        // inside the the media box and recalculate cbHeight
+        contentBox = getContainingRect(pdfPage->tree->root, mediaBox);
+        cbHeight = contentBox.y1 - contentBox.y0;
+    }
 
-    printf("-->Page %d\n", pageNo);
+
 #ifdef _blahblah
+    printf("-->Page %d\n", pageNo);
     bbdump(pdfPage->tree->root, 1);
 #endif
 
-    //// Get all the points where the page can be split
-    //getSplitPoints(pdfPage->tree->root, &sp);
-    //processSplitPoints(&sp);
+    // The rotation takes place when we insert the page into destination
+    // If only the mupdf renderer could give accurate values of the 
+    // bounding box of all the elements in a page, the splitting would
+    // be so much more easier without overlapping, cutting text, etc
+    switch(p_mode)
+    {
+    case FitHeight:
+    case FitWidth:
+        bbRect[0] = contentBox;
+        goto Cleanup;
+
+    case Fit2xHeight:
+    case Fit2xWidth:
+        // Let the processing happen.
+        break;
+
+    case SmartFitHeight:
+    case SmartFitWidth:
+    default:
+        return fz_throw("Mode(%d) not yet implemented.", p_mode);
+        break;
+    }
 
     // If the contentBox is 60% of mediaBox then do not split 
-    if (((cbHeight / mbHeight) * 100) <= 60)
+    if (((cbHeight / mbHeight) * 100) <= 55)
     {
         bbRect[0] = contentBox;
         goto Cleanup;
     }
 
-
-    // Get the first split contents from top
-    float contentHeight = contentBox.y1 - contentBox.y0;
+    // Get the first split contents from top. The box we specify is 
+    // top 60% of the contents
     bbRect[0] = contentBox;
-    bbRect[0].y0 = bbRect[0].y0 + (contentHeight / 2);
+    bbRect[0].y0 = bbRect[0].y0 + (float)(0.6 * cbHeight);
     bbRect[0] = getContainingRect(pdfPage->tree->root, bbRect[0]);
 
-    // Get the second split contents from bottom
+    // Check if the contents we got in first split is more than 40%
+    // of the total contents
+    float bbRect0Height = bbRect[0].y1 - bbRect[0].y0;
+    if (((bbRect0Height / cbHeight) * 100) >= 40)
+    {
+        // The content is more than 40%. Put the rest of the 
+        // content in the second split and exit
+        bbRect[1] = contentBox;
+        bbRect[1].y1 = bbRect[1].y1 - bbRect0Height;
+        goto Cleanup;
+    }
+
+    // Since the contents we got in first split is less than 40%
+    // of the total contents, split the content in half with overlap
+    float overlap = (cbHeight * (float)(p_overlap / 100)) / 2;
+    bbRect[0] = contentBox;
+    bbRect[0].y0 = bbRect[0].y0 + (float)(0.5 * cbHeight) - overlap;
     bbRect[1] = contentBox;
-    bbRect[1].y1 = bbRect[1].y1 - (contentHeight / 2);
-    bbRect[1] = getContainingRect(pdfPage->tree->root, bbRect[1]);
+    bbRect[1].y1 = bbRect[1].y1 - (float)(0.5 * cbHeight) + overlap;
+
+    //// Get the second split contents from bottom
+    //bbRect[1] = contentBox;
+    //bbRect[1].y1 = bbRect[1].y1 - (contentHeight / 2);
+    //bbRect[1] = getContainingRect(pdfPage->tree->root, bbRect[1]);
 
 
 Cleanup:
@@ -508,8 +619,11 @@ copyPdfFile(
     // Process every page in the source file
     //
     {
+        printf("\nProcessing input page : ");
         for (int pageNo = 0; pageNo < pdf_getpagecount(inFile->pageTree); pageNo++)
         {
+            displayPageNumber(pageNo + 1, !pageNo);
+
             // Get the page object from the source
             fz_obj  *pageRef = inFile->pageTree->pref[pageNo];
             fz_obj  *pageObj = pdf_getpageobject(inFile->pageTree, pageNo);
@@ -522,13 +636,6 @@ copyPdfFile(
             if (error)
                 return soPdfError(error);
 
-
-            //pdf_updateobject(inFile->xref, fz_tonum(pageRef), fz_togen(pageRef), pageObj);
-
-            //// push it into destination
-            //error = fz_arraypush(outFile->editobjs, pageRef);
-            //if (error)
-            //    return soPdfError(error);
 
             for (int ctr = 0; ctr < 3; ctr++)
             {
@@ -554,7 +661,7 @@ copyPdfFile(
                 if (error)
                     return soPdfError(error);
 
-                // make a copy of the original page dict
+                // make a deep copy of the original page dict
                 fz_obj  *pageObj2;
                 error = fz_deepcopydict(&pageObj2, pageObj);
                 if (error)
@@ -579,6 +686,28 @@ copyPdfFile(
                 // Set the media box
                 setPageMediaBox(inFile->xref, pageObj2, bbRect[ctr]);
 
+                // Set the rotation based on input
+                switch(p_mode)
+                {
+                    // no rotation if fit height
+                case FitHeight:
+                case Fit2xHeight:
+                    break;
+
+                    // rotate -90 deg if fit width
+                case Fit2xWidth:
+                case FitWidth:
+                    setPageRotate(pageObj2, -90);
+                    break;
+
+                case SmartFitHeight:
+                case SmartFitWidth:
+                default:
+                    return soPdfError(fz_throw("Mode(%d) not yet implemented.", p_mode));
+                    break;
+                }
+
+
                 // push the indirect reference to the destination list for copy by pdf_transplant
                 error = fz_arraypush(outFile->editobjs, pageRef2);
                 if (error)
@@ -591,12 +720,14 @@ copyPdfFile(
     {
         fz_obj      *results;
 
+        printf("\nCopying output page : ");
         error = pdf_transplant(outFile->xref, inFile->xref, &results, outFile->editobjs);
         if (error)
             return soPdfError(error);
 
         for (int ctr = 0; ctr < fz_arraylen(results); ctr++)
         {
+            displayPageNumber(ctr + 1, !ctr);
             error = fz_arraypush(outFile->pagelist, fz_arrayget(results, ctr));
             if (error)
                 return soPdfError(error);
@@ -662,14 +793,36 @@ copyPdfFile(
 
     // Create catalog and root entries
     {
-        fz_obj  *catObj;
+        fz_obj  *catObj, *infoObj;
         int     rootNum, rootGen;
+        int     infoNum, infoGen;
 
+        //
+        // Copy the info catalog to the destination
+
+        // alloc an object id and gen id in destination file
+        error = pdf_allocobject(outFile->xref, &infoNum, &infoGen);
+        if (error)
+            return soPdfError(error);
+
+        // make a deep copy of the original page dict
+        error = fz_deepcopydict(&infoObj, inFile->xref->info);
+        if (error)
+            return soPdfError(error);
+
+        // update the dest file with object
+        pdf_updateobject(outFile->xref, infoNum, infoGen, infoObj);
+        outFile->xref->info = infoObj;
+
+        fz_dropobj(infoObj);
+
+        //
+        // root/catalog object creation
         error = pdf_allocobject(outFile->xref, &rootNum, &rootGen);
         if (error)
             return soPdfError(error);
 
-        error = fz_packobj(&catObj, "<</Type/Catalog/Pages %r>>", pageTreeNum, pageTreeGen);
+        error = fz_packobj(&catObj, "<</Type/Catalog /Pages %r>>", pageTreeNum, pageTreeGen);
         if (error)
             return soPdfError(error);
 
@@ -678,14 +831,19 @@ copyPdfFile(
         fz_dropobj(catObj);
 
         // Create trailer
-        error = fz_packobj(&outFile->xref->trailer, "<</Root %r>>", rootNum, rootGen);
+        error = fz_packobj(&outFile->xref->trailer, "<</Root %r /Info %r>>", 
+            rootNum, rootGen, infoNum, infoGen);
         if (error)
             return soPdfError(error);
 
     }
 
+    // Update the info in the target file and save the xref
+    printf("\nSaving.\n");
+    error = setPageInfo(inFile, outFile);
+    if (error)
+        return soPdfError(error);
 
-    // Save the xref
     error = pdf_savexref(outFile->xref, outFile->fileName, NULL);
     if (error)
         return soPdfError(error);

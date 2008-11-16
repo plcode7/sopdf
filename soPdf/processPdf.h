@@ -9,6 +9,7 @@ typedef struct _soPdfFile
     char    category[128];
     char    password[128];
     char    publisher[128];
+    char    subject[128];
 
     // pdf document state
     pdf_xref        *xref;

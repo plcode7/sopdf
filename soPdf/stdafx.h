@@ -11,7 +11,10 @@
 #include <tchar.h>
 #include <assert.h>
 #include <string.h>
+#include <time.h>
 
 
 #include <fitz.h>
 #include <mupdf.h>
+
+#include <windows.h>

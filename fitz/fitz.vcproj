@@ -84,7 +84,7 @@
 			OutputDirectory="$(SolutionDir)$(ConfigurationName)"
 			IntermediateDirectory="$(ConfigurationName)"
 			ConfigurationType="4"
-			CharacterSet="1"
+			CharacterSet="2"
 			WholeProgramOptimization="1"
 			>
 			<Tool
@@ -104,9 +104,11 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
+				AdditionalOptions="/wd 4244"
 				Optimization="2"
 				EnableIntrinsicFunctions="true"
-				PreprocessorDefinitions="WIN32;NDEBUG;_LIB"
+				AdditionalIncludeDirectories="include;include\fitz;include\mupdf;..\jpeg6b;..\jasper\include;..\zlib;..\jbig2dec;cmaps;..\freetype\include"
+				PreprocessorDefinitions="WIN32;NDEBUG;_LIB;_CRT_SECURE_NO_WARNINGS;_CRT_SECURE_NO_DEPRECATE;NEED_STRLCPY;NEED_STRSEP;NEED_MATH;NEED_GETOPT;NEED_GETTIMEOFDAY;__func__=__FUNCTION__;isnan=_isnan;USE_STATIC_CMAPS;WIN32_UNICODE_HACK;FT2_BUILD_LIBRARY;FT_OPTION_AUTOFIT2;BUILD_RM_VERSION"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"

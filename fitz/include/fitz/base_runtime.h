@@ -58,8 +58,8 @@ typedef struct fz_error_s fz_error;
 struct fz_error_s
 {
 	char msg[184];
-	char file[32];
-	char func[32];
+	char file[128];
+	char func[128];
 	int line;
 	fz_error *cause;
 };

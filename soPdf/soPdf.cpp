@@ -98,18 +98,16 @@ soPdfError(
     fz_error *error
     )
 {
+    fz_error *e = error;
     while (error)
     {
-        printf(" Error: %s\n", error->msg);
-        printf("  Func: %s\n", error->func);
-        printf("  Line: %d\n", error->line);
-        printf("  File: %s\n", error->file);
-
+        printf("Error: %s(%d) : %s() - %s\n", error->file, 
+            error->line, error->func, error->msg);
         error = error->cause;
-        if (error) printf(" Cause: -->");
+        //if (error) printf(" Cause: -->");
     }
 
-    fz_droperror(error);
+    fz_droperror(e);
     return 1;
 }
 
@@ -159,7 +157,7 @@ _tmain(int argc, _TCHAR* argv[])
 
 
     // parse the command line arguments
-    while ((c = getopt(argc, argv, "i:p:o:wm:o:t:a:b:c:")) != -1)
+    while ((c = getopt(argc, argv, "i:p:o:t:a:b:c:s:wm:v:")) != -1)
     {
         switch(c)
         {
@@ -171,6 +169,7 @@ _tmain(int argc, _TCHAR* argv[])
         case 'a':   COPY_ARG(outPdfFile.author, optarg);    break;
         case 'b':   COPY_ARG(outPdfFile.publisher, optarg); break;
         case 'c':   COPY_ARG(outPdfFile.category, optarg);  break;
+        case 's':   COPY_ARG(outPdfFile.subject, optarg);   break;
 
         case 'w':   p_cropWhiteSpace = false;               break;
         case 'm':   p_mode = (EMode)atoi(optarg);           break;
@@ -189,6 +188,11 @@ _tmain(int argc, _TCHAR* argv[])
         COPY_ARG(outPdfFile.fileName, inPdfFile.fileName);
         strcat_s(outPdfFile.fileName, sizeof(outPdfFile.fileName), "out.pdf");
     }
+
+    printf("\nsoPdf ver " SO_PDF_VER "\n");
+    printf("\tA program to reformat pdf file for sony reader\n");
+    printf("\nInput : %s\n", inPdfFile.fileName);
+    printf("Output: %s\n\n", outPdfFile.fileName);
 
     return processPdfFile(&inPdfFile, &outPdfFile);
 }
