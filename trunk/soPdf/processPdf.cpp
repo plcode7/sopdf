@@ -306,19 +306,25 @@ setPageRotate(
     )
 {
     fz_obj      *objRotate;
+    fz_error    *error = NULL;
 
     // Get the media box
     objRotate = fz_dictgets(pageObj, "Rotate");
     if (objRotate == NULL)
     {
+        fz_obj  *objInt;
         // This entry does not have media box. Create a new
-        // media box entry later
-        return fz_throw("no Rotate entry");
+        // media box entry
+        error = fz_newint(&objInt, rotate);
+        if (error) return fz_rethrow(error, "cannot allocate rotate int");
+        error = fz_dictputs(pageObj, "Rotate", objInt);
+        if (error) return fz_rethrow(error, "cannot add rotate entry");
+        fz_dropobj(objInt);
     }
+    else
+        objRotate->u.i = rotate;
 
-    objRotate->u.i = rotate;
-
-    return NULL;
+    return error;
 }
 
 
@@ -565,9 +571,9 @@ processPage(
     }
 
     // Get the first split contents from top. The box we specify is 
-    // top 60% of the contents
+    // top 55% (bottom + 45) of the contents
     bbRect[0] = contentBox;
-    bbRect[0].y0 = bbRect[0].y0 + (float)(0.4 * cbHeight);
+    bbRect[0].y0 = bbRect[0].y0 + (float)(0.45 * cbHeight);
     bbRect[0] = getContainingRect(pdfPage->tree->root, bbRect[0]);
 
     // Check if the contents we got in first split is more than 40%
@@ -579,6 +585,11 @@ processPage(
         // content in the second split and exit
         bbRect[1] = contentBox;
         bbRect[1].y1 = bbRect[1].y1 - bbRect0Height;
+
+        // Adjust the split box height by one points to make sure
+        // we get everything and dont have annoying tail cuts
+        bbRect[0].y0 -= 2;
+        bbRect[1].y1 += 2;
         goto Cleanup;
     }
 
