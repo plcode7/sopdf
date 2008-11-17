@@ -656,10 +656,30 @@ copyPdfFile(
                 
 
                 // allocate an object id and generation id in source file
-                int sNum, sGen;
-                error = pdf_allocobject(inFile->xref, &sNum, &sGen);
-                if (error)
-                    return soPdfError(error);
+                //
+                // There is a bug in mupdf where the object allocation returns
+                // 0 oid and 0 gid when the input pdf file has iref stream
+                // so to work around the issue, we wrap the pdf_allocojbect
+                // in a for loop 10 times to get the number
+                //
+                int sNum, sGen, tries;
+
+                for (tries = 0; tries < 10; tries++)
+                {
+                    error = pdf_allocobject(inFile->xref, &sNum, &sGen);
+                    if (error)
+                        return soPdfError(error);
+
+                    // If sNum is non zero then the allocation was successful
+                    if (sNum != 0)
+                        break;  
+                    pdf_updateobject(inFile->xref, sNum, sGen, pageObj);
+                }
+
+                // If we didn't succeed even after 10 tries then this file 
+                // is not going to work.
+                if (tries >= 10)
+                    return soPdfError(fz_throw("cannot allocate object because of mupdf bug"));
 
                 // make a deep copy of the original page dict
                 fz_obj  *pageObj2;
