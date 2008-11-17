@@ -567,7 +567,7 @@ processPage(
     // Get the first split contents from top. The box we specify is 
     // top 60% of the contents
     bbRect[0] = contentBox;
-    bbRect[0].y0 = bbRect[0].y0 + (float)(0.6 * cbHeight);
+    bbRect[0].y0 = bbRect[0].y0 + (float)(0.4 * cbHeight);
     bbRect[0] = getContainingRect(pdfPage->tree->root, bbRect[0]);
 
     // Check if the contents we got in first split is more than 40%
