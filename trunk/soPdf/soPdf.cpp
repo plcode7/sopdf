@@ -117,7 +117,7 @@ soPdfUsage(void)
 {
     fprintf(stderr,
         "about: soPdf\n"
-        "   author: Navin Pai, soPdf ver 0.1 alpha\n"
+        "   author: Navin Pai, soPdf ver " SO_PDF_VER "\n"
         "usage: \n"
         "   soPdf -i file_name [options]\n"
         "   -i file_name    input file name\n"
