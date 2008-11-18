@@ -13,6 +13,7 @@ enum EMode
 //
 // declarations for parameters
 //
+extern bool     p_reverseLandscape;
 extern bool     p_cropWhiteSpace;
 extern double   p_overlap;
 extern EMode    p_mode;
