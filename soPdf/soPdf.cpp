@@ -8,6 +8,7 @@
 //
 // Definitions
 //
+bool    p_proceedWithErrors = false;
 bool    p_cropWhiteSpace = true;
 double  p_overlap = 2;
 EMode   p_mode = Fit2xWidth;
@@ -98,13 +99,15 @@ soPdfError(
     fz_error *error
     )
 {
+    int ctr = 0;
     fz_error *e = error;
     while (error)
     {
-        printf("Error: %s(%d) : %s() - %s\n", error->file, 
-            error->line, error->func, error->msg);
+        printf("%*sError: %s(%d) : %s() - %s\n", 
+            ctr++, "", error->file, error->line, 
+            error->func, error->msg);
+
         error = error->cause;
-        //if (error) printf(" Cause: -->");
     }
 
     fz_droperror(e);
@@ -138,6 +141,8 @@ soPdfUsage(void)
         "   -a author       set the file author\n"
         "   -b publisher    set the publisher\n"
         "   -c category     set the category\n"
+        "   -s subject      set the subject\n"
+        "   -e              proceed with errors\n"
         "\n"
         "   * = default values\n");
 
@@ -157,7 +162,7 @@ _tmain(int argc, _TCHAR* argv[])
 
 
     // parse the command line arguments
-    while ((c = getopt(argc, argv, "i:p:o:t:a:b:c:s:wm:v:")) != -1)
+    while ((c = getopt(argc, argv, "i:p:o:t:a:b:c:s:ewm:v:")) != -1)
     {
         switch(c)
         {
@@ -171,6 +176,7 @@ _tmain(int argc, _TCHAR* argv[])
         case 'c':   COPY_ARG(outPdfFile.category, optarg);  break;
         case 's':   COPY_ARG(outPdfFile.subject, optarg);   break;
 
+        case 'e':   p_proceedWithErrors = true;             break;
         case 'w':   p_cropWhiteSpace = false;               break;
         case 'm':   p_mode = (EMode)atoi(optarg);           break;
         case 'v':   p_overlap = atof(optarg);               break;
