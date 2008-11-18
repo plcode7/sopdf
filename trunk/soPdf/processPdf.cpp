@@ -2,7 +2,9 @@
 #include "soPdf.h"
 #include "processPdf.h"
 
-
+#define MAX_ERRORS_BEFORE_STOP      512
+int g_errorCount = 0;
+fz_error *g_errorList[MAX_ERRORS_BEFORE_STOP];
 
 void
 displayPageNumber(
@@ -32,6 +34,19 @@ displayPageNumber(
         printf("%d", pageNo);
     }
 }
+
+
+fz_error*
+soPdfErrorList(
+    fz_error *error
+    )
+{
+    for (int ctr = g_errorCount - 1; ctr >= 0; ctr--)
+        soPdfError(g_errorList[ctr]);
+
+    return fz_throw("\nToo many errors to proceed...");
+}
+
 
 soPdfFile*
 initSoPdfFile(
@@ -374,116 +389,80 @@ getContainingRect(
     return rect;
 }
 
-#define SPLIT_POINTS 1000
-struct splitPoints
-{
-    float y0[SPLIT_POINTS];
-    float y1[SPLIT_POINTS];
-    int count;
-};
 
-int splitCmp(const void* e1, const void* e2)
+fz_error*
+processErrorPage(
+    soPdfFile* inFile,
+    fz_obj *pageObj,
+    int pageNo,
+    fz_rect *bbRect,
+    fz_error *error
+    )
 {
-    return (*(float*)e1 < *(float*)e2) ? -1 : ((*(float*)e1 > *(float*)e2) ? 1 : 0);
-}
+    // Wrap the error
+    error = fz_rethrow(error, "Cannot process page %d", pageNo + 1);
 
-fz_error* insertYCoord(splitPoints *sp, float y0, float y1)
-{
-    int ctr;
+    // If we are not supposed to proceed with error then it ends
+    if (p_proceedWithErrors == false)
+            return error;
 
-    if (sp->count >= SPLIT_POINTS)
+    // Save the error in the list
+    if (g_errorCount >= MAX_ERRORS_BEFORE_STOP)
+        return soPdfErrorList(error);
+                
+    g_errorList[g_errorCount++] = error;
+
+
+    // Get the box for the page
+    fz_obj *obj = fz_dictgets(pageObj, "CropBox");
+    if (!obj)
+        obj = fz_dictgets(pageObj, "MediaBox");
+
+    error = pdf_resolve(&obj, inFile->xref);
+    if (error)
+        return fz_rethrow(error, "Cannot proceed with error %d", pageNo + 1);
+
+    if (!fz_isarray(obj))
+        return fz_throw("Cannot find page bounds : %d", pageNo + 1);
+
+    fz_rect bbox = pdf_torect(obj);
+    fz_rect mediaBox;
+
+	mediaBox.x0 = MIN(bbox.x0, bbox.x1);
+	mediaBox.y0 = MIN(bbox.y0, bbox.y1);
+	mediaBox.x1 = MAX(bbox.x0, bbox.x1);
+	mediaBox.y1 = MAX(bbox.y0, bbox.y1);
+    float mbHeight = mediaBox.y1 - mediaBox.y0;
+
+
+    switch(p_mode)
     {
-        return fz_throw("not enough memory");
-    }
+    case FitHeight:
+    case FitWidth:
+        bbRect[0] = mediaBox;
+        break;
 
-    if (sp->count > 0)
-    {
-        float *fp = (float*)bsearch(&y0, sp->y0, sp->count, sizeof(float), splitCmp);
-        if (fp != NULL)
+    case Fit2xHeight:
+    case Fit2xWidth:
         {
-            int offset = (fp - sp->y0) / sizeof(float);
-            if (sp->y1[offset] < y1) sp->y1[offset] = y1;
-            return NULL;
+            float overlap = (mbHeight * (float)(p_overlap / 100)) / 2;
+            bbRect[0] = mediaBox;
+            bbRect[0].y0 = bbRect[0].y0 + (float)(0.5 * mbHeight) - overlap;
+            bbRect[1] = mediaBox;
+            bbRect[1].y1 = bbRect[1].y1 - (float)(0.5 * mbHeight) + overlap;
         }
-    }
+        break;
 
-    // Insert sorted
-    for (ctr = sp->count; ctr > 0; ctr--)
-    {
-        if (sp->y0[ctr - 1] > y0) 
-        {
-            sp->y0[ctr] = sp->y0[ctr - 1];
-            sp->y1[ctr] = sp->y1[ctr - 1];
-        }
-        else
-            break;
+    case SmartFitHeight:
+    case SmartFitWidth:
+    default:
+        return fz_throw("Mode(%d) not yet implemented.", p_mode);
+        break;
     }
-
-    sp->y0[ctr] = y0;
-    sp->y1[ctr] = y1;
-    sp->count++;
 
     return NULL;
-} 
-
-
-void
-getSplitPoints(
-    fz_node *node,
-    splitPoints *sp
-    )
-{
-    if (node)
-    {
-        switch(node->kind)
-        {
-        case FZ_NTEXT:
-        case FZ_NIMAGE:
-        case FZ_NPATH:
-            insertYCoord(sp, node->bbox.y0, node->bbox.y1);
-            break;
-
-        default:
-            break;
-        }
-
-        // Recurse
-        for (fz_node *child = node->first; child; child = child->next)
-            getSplitPoints(child, sp);
-    }
 }
 
-void
-processSplitPoints(
-    splitPoints *sp
-    )
-{
-    splitPoints lsp;
-    int prevCount;
-
-    do {
-
-        lsp.count = 1;
-        lsp.y0[0] = sp->y0[0];
-        lsp.y1[0] = sp->y1[0];
-
-        for (int ctr = 1; ctr < sp->count; ctr++)
-        {
-            if (lsp.y1[lsp.count - 1] < sp->y0[ctr])
-                insertYCoord(&lsp, sp->y0[ctr], sp->y1[ctr]);
-            else
-            {
-                if (sp->y0[ctr] < lsp.y0[lsp.count - 1])    lsp.y0[lsp.count - 1] = sp->y0[ctr];
-                if (sp->y1[ctr] > lsp.y1[lsp.count - 1])    lsp.y1[lsp.count - 1] = sp->y1[ctr];
-            }
-        }
-
-        // copy to dest
-        prevCount = sp->count;
-        *sp = lsp;
-
-    } while (prevCount > lsp.count);
-}
 
 fz_error*
 processPage(
@@ -499,16 +478,20 @@ processPage(
     fz_rect     contentBox;
     fz_rect     mediaBox;
 
+
     // Initialize 
     for (int ctr = 0; ctr < rectCount; ctr++)
         bbRect[ctr] = fz_emptyrect;
 
-    // Get the page reference and load it
+    // Get the page reference and load the page contents
     pageRef = pdf_getpageobject(inFile->pageTree, pageNo);
     error = pdf_loadpage(&pdfPage, inFile->xref, pageRef);
-    if (error)
-        return error;
-
+    if (error != NULL)
+    {
+        // Ideally pdf_loadpage should render all the pages
+        // and this should never happen
+        return processErrorPage(inFile, pageRef, pageNo, bbRect, error);
+    }
 
     // Get the bounding box for the page
     mediaBox = pdfPage->mediabox;
@@ -586,10 +569,9 @@ processPage(
         bbRect[1] = contentBox;
         bbRect[1].y1 = bbRect[1].y1 - bbRect0Height;
 
-        // Adjust the split box height by one points to make sure
+        // Adjust the split box height by X points to make sure
         // we get everything and dont have annoying tail cuts
         bbRect[0].y0 -= 2;
-        bbRect[1].y1 += 2;
         goto Cleanup;
     }
 
@@ -601,14 +583,11 @@ processPage(
     bbRect[1] = contentBox;
     bbRect[1].y1 = bbRect[1].y1 - (float)(0.5 * cbHeight) + overlap;
 
-    //// Get the second split contents from bottom
-    //bbRect[1] = contentBox;
-    //bbRect[1].y1 = bbRect[1].y1 - (contentHeight / 2);
-    //bbRect[1] = getContainingRect(pdfPage->tree->root, bbRect[1]);
-
 
 Cleanup:
-    // done with the page
+    // This function can overflow the stack when the pdf page
+    // to be rendered is very complex. I had to increase the 
+    // stack size reserved for exe using compiler option
     pdf_droppage(pdfPage);
 
     return error;
@@ -878,6 +857,14 @@ copyPdfFile(
     error = pdf_savexref(outFile->xref, outFile->fileName, NULL);
     if (error)
         return soPdfError(error);
+
+    if (g_errorCount != 0)
+    {
+        printf("\nFollowing issues encounted were ignored.\n\n");
+        for (int ctr = g_errorCount - 1; ctr >= 0; ctr--)
+            soPdfError(g_errorList[ctr]);
+    }
+    printf("\nSaved.\n");
 
     return 0;
 }

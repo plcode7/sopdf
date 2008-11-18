@@ -16,7 +16,9 @@ enum EMode
 extern bool     p_cropWhiteSpace;
 extern double   p_overlap;
 extern EMode    p_mode;
+extern bool     p_proceedWithErrors;
 
-#define SO_PDF_VER  "0.1 alpha Rev 9"
+#define SO_PDF_VER  "0.1 alpha Rev 10"
 
 int soPdfError(fz_error *error);
+fz_error* soPdfErrorList(fz_error *error);
