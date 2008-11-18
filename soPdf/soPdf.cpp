@@ -9,6 +9,7 @@
 // Definitions
 //
 bool    p_proceedWithErrors = false;
+bool    p_reverseLandscape = false;
 bool    p_cropWhiteSpace = true;
 double  p_overlap = 2;
 EMode   p_mode = Fit2xWidth;
@@ -143,6 +144,7 @@ soPdfUsage(void)
         "   -c category     set the category\n"
         "   -s subject      set the subject\n"
         "   -e              proceed with errors\n"
+        "   -r              reverse landscape\n"
         "\n"
         "   * = default values\n");
 
@@ -162,7 +164,7 @@ _tmain(int argc, _TCHAR* argv[])
 
 
     // parse the command line arguments
-    while ((c = getopt(argc, argv, "i:p:o:t:a:b:c:s:ewm:v:")) != -1)
+    while ((c = getopt(argc, argv, "i:p:o:t:a:b:c:s:ewm:v:r")) != -1)
     {
         switch(c)
         {
@@ -180,6 +182,7 @@ _tmain(int argc, _TCHAR* argv[])
         case 'w':   p_cropWhiteSpace = false;               break;
         case 'm':   p_mode = (EMode)atoi(optarg);           break;
         case 'v':   p_overlap = atof(optarg);               break;
+        case 'r':   p_reverseLandscape = true;              break;
         default:    return soPdfUsage();                    break;
         }
     }

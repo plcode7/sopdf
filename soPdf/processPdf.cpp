@@ -585,6 +585,7 @@ processPage(
 
 
 Cleanup:
+
     // This function can overflow the stack when the pdf page
     // to be rendered is very complex. I had to increase the 
     // stack size reserved for exe using compiler option
@@ -707,7 +708,7 @@ copyPdfFile(
                     // rotate -90 deg if fit width
                 case Fit2xWidth:
                 case FitWidth:
-                    setPageRotate(pageObj2, -90);
+                    setPageRotate(pageObj2, p_reverseLandscape ? 90 : -90);
                     break;
 
                 case SmartFitHeight:
@@ -729,16 +730,19 @@ copyPdfFile(
     // flush the objects into destination from source
     {
         fz_obj      *results;
+        int         outPages;
 
         printf("\nCopying output page : ");
         error = pdf_transplant(outFile->xref, inFile->xref, &results, outFile->editobjs);
         if (error)
             return soPdfError(error);
 
-        for (int ctr = 0; ctr < fz_arraylen(results); ctr++)
+        outPages = fz_arraylen(results);
+        for (int ctr = 0; ctr < outPages; ctr++)
         {
             displayPageNumber(ctr + 1, !ctr);
-            error = fz_arraypush(outFile->pagelist, fz_arrayget(results, ctr));
+            error = fz_arraypush(outFile->pagelist, fz_arrayget(results, 
+                p_reverseLandscape ? outPages - 1 - ctr : ctr));
             if (error)
                 return soPdfError(error);
         }
