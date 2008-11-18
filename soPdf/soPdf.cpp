@@ -198,6 +198,12 @@ _tmain(int argc, _TCHAR* argv[])
         strcat_s(outPdfFile.fileName, sizeof(outPdfFile.fileName), "out.pdf");
     }
 
+    // The reverseLandscape works with landscape mode only
+    if (! ((p_mode == FitWidth) || 
+           (p_mode == Fit2xWidth) || 
+           (p_mode == SmartFitWidth)))
+        p_reverseLandscape = false;
+
     printf("\nsoPdf ver " SO_PDF_VER "\n");
     printf("\tA program to reformat pdf file for sony reader\n");
     printf("\nInput : %s\n", inPdfFile.fileName);
